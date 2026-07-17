@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 
-from data.catalog import WOOD_TYPES
+from catalog import WOOD_TYPES
 from design_engine import generate_design
 from visualizer import draw_layout
 
