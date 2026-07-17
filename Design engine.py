@@ -7,7 +7,7 @@ Takes a structured set of user requirements and returns:
   - a total cost estimate
 """
 
-from data.catalog import FURNITURE_BASE_PRICE, WOOD_TYPES, WOOD_APPLICABLE_ITEMS, NORMS
+from catalog import FURNITURE_BASE_PRICE, WOOD_TYPES, WOOD_APPLICABLE_ITEMS, NORMS
 import math
 
 
