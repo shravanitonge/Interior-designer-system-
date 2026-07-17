@@ -204,6 +204,56 @@ def draw_layout(room_names, washrooms=1):
 
 
 # ===========================================================================
+# 3b. AI IMAGE GENERATION (realistic room rendering — free, no API key)
+# ===========================================================================
+
+ROOM_IMAGE_PRESETS = [
+    "Open Workstation Area", "Private Cabin", "Meeting Room",
+    "Conference Room", "Interview Room", "Reception", "Canteen",
+]
+
+
+def build_image_prompt(room_type, wood_type, chair_type, style_notes=""):
+    wood_desc = WOOD_TYPES.get(wood_type, {}).get("desc", wood_type)
+    prompt = (
+        f"A photorealistic interior design photograph of a modern office {room_type.lower()}. "
+        f"Furniture finished in {wood_type.lower()} ({wood_desc}). "
+        f"{chair_type.lower()} grade office chairs. "
+        f"Clean corporate design, natural lighting, wide-angle interior photography, "
+        f"realistic materials and textures, professional architectural photography style."
+    )
+    if style_notes:
+        prompt += f" Additional style direction: {style_notes}."
+    return prompt
+
+
+def generate_ai_image(prompt, seed=42):
+    """
+    Calls Pollinations.ai — a free, keyless image generation API.
+    Returns (image_bytes, error_message).
+    """
+    try:
+        import requests as _requests
+        import urllib.parse
+    except ImportError:
+        return None, "Missing package. Add 'requests' to requirements.txt."
+
+    try:
+        encoded = urllib.parse.quote(prompt)
+        url = (
+            f"https://image.pollinations.ai/prompt/{encoded}"
+            f"?width=1024&height=1024&seed={seed}&nologo=true"
+        )
+        resp = _requests.get(url, timeout=60)
+        resp.raise_for_status()
+        if not resp.content or len(resp.content) < 500:
+            return None, "The image service returned an empty response. Please try again."
+        return resp.content, None
+    except Exception as e:
+        return None, f"{e} — the free image service may be temporarily busy, try again in a moment."
+
+
+# ===========================================================================
 # 4. STREAMLIT UI
 # ===========================================================================
 
@@ -244,8 +294,27 @@ with st.sidebar:
 
     generate = st.button("✨ Generate Design", type="primary", use_container_width=True)
 
+    st.divider()
+    st.subheader("🖼️ AI Rendering (optional)")
+    st.caption("Free, no API key or account needed.")
+    room_to_render = st.selectbox("Room to visualize", ROOM_IMAGE_PRESETS)
+    style_notes = st.text_input("Extra style notes (optional)", placeholder="e.g. biophilic, lots of plants, glass walls")
+    render_image = st.button("🎨 Generate Realistic Image", use_container_width=True)
+
 if "design" not in st.session_state:
     st.session_state.design = None
+if "rendered_image" not in st.session_state:
+    st.session_state.rendered_image = None
+if "render_error" not in st.session_state:
+    st.session_state.render_error = None
+
+if render_image:
+    prompt = build_image_prompt(room_to_render, wood_type, chair_type, style_notes)
+    with st.spinner(f"Generating a realistic image of the {room_to_render.lower()}..."):
+        img_bytes, err = generate_ai_image(prompt)
+    st.session_state.rendered_image = img_bytes
+    st.session_state.render_error = err
+    st.session_state.rendered_room_name = room_to_render
 
 if generate:
     req = dict(
@@ -260,8 +329,32 @@ if generate:
 
 design = st.session_state.design
 
+
+def show_rendering_result():
+    if st.session_state.render_error:
+        st.error(f"Image generation failed: {st.session_state.render_error}")
+    elif st.session_state.rendered_image:
+        st.image(
+            st.session_state.rendered_image,
+            caption=f"AI-generated rendering — {st.session_state.get('rendered_room_name', '')}",
+            use_container_width=True,
+        )
+        st.download_button(
+            "⬇️ Download Image", st.session_state.rendered_image,
+            f"{st.session_state.get('rendered_room_name', 'room').lower().replace(' ', '_')}.png",
+            "image/png",
+        )
+    else:
+        st.info(
+            "Pick a room in the sidebar, then click **Generate Realistic Image** "
+            "to create a photorealistic rendering — completely free."
+        )
+
+
 if design is None:
-    st.info("Fill in your requirements in the sidebar and click **Generate Design**.")
+    st.info("Fill in your requirements in the sidebar and click **Generate Design** for the furniture plan & cost estimate.")
+    st.subheader("🖼️ AI Rendering")
+    show_rendering_result()
 else:
     df = pd.DataFrame(design["rows"])
 
@@ -270,7 +363,7 @@ else:
     col2.metric("Rooms Planned", df["Room"].nunique())
     col3.metric("Total Furniture Items", int(df["Qty"].sum()))
 
-    tab1, tab2, tab3 = st.tabs(["📐 Layout", "🪑 Furniture Plan", "💰 Cost Breakdown"])
+    tab1, tab2, tab3, tab4 = st.tabs(["📐 Layout", "🪑 Furniture Plan", "💰 Cost Breakdown", "🖼️ AI Rendering"])
 
     with tab1:
         fig = draw_layout(df["Room"].tolist(), washrooms=st.session_state.last_req["washrooms"])
@@ -291,3 +384,6 @@ else:
         st.bar_chart(cost_by_item)
         csv = df.to_csv(index=False).encode("utf-8")
         st.download_button("⬇️ Download Full Plan (CSV)", csv, "office_design_plan.csv", "text/csv")
+
+    with tab4:
+        show_rendering_result()
